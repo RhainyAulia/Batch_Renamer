@@ -3,7 +3,6 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from pathlib import Path
 
-# Import engine internal
 from core.sorting import sort_files
 from core.renaming import generate_preview, detect_conflicts
 from core.history import HistoryManager
@@ -13,15 +12,12 @@ class MainWindow(tk.Tk):
         super().__init__()
         
         self.title("Sistem Automasi Batch-Renaming File")
+        self.geometry("1150x720")
+        self.minsize(1050, 600)
         
-        # Jendela dibuat lebar dari awal agar seluruh tabel langsung kelihatan utuh
-        self.geometry("1100x650")
-        self.minsize(1000, 550)
-        
-        # State Data Aplikasi
         self.selected_folder = None
-        self.current_files = []      # Menyimpan list of Path asli
-        self.preview_data = []       # Menyimpan list of tuple (Path, nama_baru_str)
+        self.current_files = []      
+        self.preview_data = []       
         self.history_manager = HistoryManager()
         
         self._setup_styles()
@@ -35,9 +31,7 @@ class MainWindow(tk.Tk):
         self.style.configure("Status.TLabel", font=("Segoe UI", 9, "italic"))
 
     def _create_widgets(self):
-        # ==========================================
-        # 1. BAGIAN ATAS: PEMILIHAN FOLDER
-        # ==========================================
+        # 1. ATAS: PILIH FOLDER
         top_frame = ttk.LabelFrame(self, text=" 1. Pilih Sumber File ", padding=10)
         top_frame.pack(fill="x", padx=15, pady=8)
         
@@ -47,29 +41,49 @@ class MainWindow(tk.Tk):
         self.lbl_folder_path = ttk.Label(top_frame, text="Belum ada folder yang dipilih.", foreground="gray")
         self.lbl_folder_path.pack(side="left", padx=10, fill="x", expand=True)
 
-        # ==========================================
-        # 2. BAGIAN TENGAH: RUANG KERJA UTAMA (SPLIT)
-        # ==========================================
+        # 2. TENGAH: WORKSPACE
         workspace = ttk.Frame(self, padding=5)
         workspace.pack(fill="both", expand=True, padx=10)
         
-        # --- Panel Kiri: Kontrol & Kriteria (Lebar Terkunci 320px) ---
-        left_panel = ttk.Frame(workspace, padding=5, width=320)
-        left_panel.pack(side="left", fill="y", padx=5)
-        left_panel.pack_propagate(False) 
+# Panel Kiri (Scrollable untuk konfigurasi bertumpuk)
+        left_canvas = tk.Canvas(workspace, borderwidth=0, highlightthickness=0, width=340)
+        left_scrollbar = ttk.Scrollbar(workspace, orient="vertical", command=left_canvas.yview)
+        left_panel = ttk.Frame(left_canvas, padding=5)
         
-        self._build_priority_sorting_panel(left_panel)
-        self._build_friendly_renaming_panel(left_panel)
+        left_panel.bind("<Configure>", lambda e: left_canvas.configure(scrollregion=left_canvas.bbox("all")))
+        left_canvas.create_window((0, 0), window=left_panel, anchor="nw", width=340)
+        left_canvas.configure(yscrollcommand=left_scrollbar.set)
         
-        # --- Panel Kanan: Tabel Informasi File ---
+        left_canvas.pack(side="left", fill="y", padx=5)
+        left_scrollbar.pack(side="left", fill="y")
+        
+        # --- [BARU] FITUR MOUSE WHEEL SCROLL ---
+        # Fungsi untuk menggerakkan canvas saat mouse wheel diputar
+        def _on_mousewheel(event):
+            # Windows menggunakan event.delta, Linux biasanya menggunakan event.num
+            if event.delta:
+                left_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+            else:
+                if event.num == 4:
+                    left_canvas.yview_scroll(-1, "units")
+                elif event.num == 5:
+                    left_canvas.yview_scroll(1, "units")
+
+        # Ikat event mousewheel ke Canvas dan seluruh area di dalamnya
+        left_canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        # Khusus OS Linux (Ubuntu/Debian) menggunakan Button-4 dan Button-5
+        left_canvas.bind_all("<Button-4>", _on_mousewheel)
+        left_canvas.bind_all("<Button-5>", _on_mousewheel)
+        
+        # Panel Kanan: Tabel
         right_panel = ttk.Frame(workspace, padding=5)
         right_panel.pack(side="right", fill="both", expand=True, padx=5)
         
+        self._build_priority_sorting_panel(left_panel)
+        self._build_combined_renaming_panel(left_panel)
         self._build_table_panel(right_panel)
         
-        # ==========================================
-        # 3. BAGIAN BAWAH: STATUS & TOMBOL AKSI
-        # ==========================================
+        # 3. BAWAH: AKSI
         bottom_frame = ttk.Frame(self, padding=10)
         bottom_frame.pack(fill="x", side="bottom", padx=15, pady=5)
         
@@ -85,13 +99,12 @@ class MainWindow(tk.Tk):
         self.btn_preview = ttk.Button(bottom_frame, text="Lihat Preview Nama Baru", command=self._update_preview, state="disabled")
         self.btn_preview.pack(side="right", padx=5)
         
-        # Aktifkan tombol undo jika terdeteksi ada file history log lama
         if self.history_manager.load_last_history():
             self.btn_undo.config(state="normal")
 
     def _build_priority_sorting_panel(self, parent):
         sort_frame = ttk.LabelFrame(parent, text=" 2. Urutan Prioritas File (Maks 2) ", padding=8)
-        sort_frame.pack(fill="x", pady=5)
+        sort_frame.pack(fill="x", pady=5, anchor="n")
         
         criteria_options = ["(Tidak ada)", "Nama File", "Ekstensi File", "Ukuran File", "Tanggal Modifikasi", "Tanggal Dibuat"]
         self.criteria_map = {
@@ -99,73 +112,125 @@ class MainWindow(tk.Tk):
             "Ukuran File": "size", "Tanggal Modifikasi": "modification_date", "Tanggal Dibuat": "creation_date"
         }
         
-        # Kriteria Prioritas Pertama (Utama)
         ttk.Label(sort_frame, text="Prioritas 1 (Utama):").pack(anchor="w", pady=(2,0))
         self.cb_p1 = ttk.Combobox(sort_frame, values=criteria_options[1:], state="readonly")
         self.cb_p1.set("Nama File")
         self.cb_p1.pack(fill="x", pady=2)
         
         self.var_desc_p1 = tk.BooleanVar(value=False)
-        ttk.Checkbutton(sort_frame, text="Urutan Terbalik (Z-A / Terbaru / Terbesar)", variable=self.var_desc_p1).pack(anchor="w", pady=(0,5))
+        ttk.Checkbutton(sort_frame, text="Urutan Terbalik (Z-A / Terbaru)", variable=self.var_desc_p1).pack(anchor="w", pady=(0,5))
         
-        # Kriteria Prioritas Kedua (Opsional)
-        ttk.Label(sort_frame, text="Prioritas 2 (Jika Prioritas 1 Sama):").pack(anchor="w")
+        ttk.Label(sort_frame, text="Prioritas 2 (Opsional):").pack(anchor="w")
         self.cb_p2 = ttk.Combobox(sort_frame, values=criteria_options, state="readonly")
         self.cb_p2.set("(Tidak ada)")
         self.cb_p2.pack(fill="x", pady=2)
         
         self.var_desc_p2 = tk.BooleanVar(value=False)
-        ttk.Checkbutton(sort_frame, text="Urutan Terbalik (Z-A / Terbaru / Terbesar)", variable=self.var_desc_p2).pack(anchor="w")
+        ttk.Checkbutton(sort_frame, text="Urutan Terbalik (Z-A / Terbaru)", variable=self.var_desc_p2).pack(anchor="w")
 
-    def _build_friendly_renaming_panel(self, parent):
-        # Antarmuka Tab-based agar pengguna awam fokus pada opsi yang mereka inginkan tanpa tercampur
-        self.rename_notebook = ttk.Notebook(parent)
-        self.rename_notebook.pack(fill="both", expand=True, pady=10)
+    def _build_combined_renaming_panel(self, parent):
+        # --- PANEL MODUL 1: ANGKA URUT ---
+        self.seq_frame = ttk.LabelFrame(parent, text=" 3. Modul Angka Urut ", padding=8)
+        self.seq_frame.pack(fill="x", pady=8, anchor="n")
         
-        # --- TAB 1: Pola Sekuensial / Angka Urut ---
-        tab_seq = ttk.Frame(self.rename_notebook, padding=10)
-        self.rename_notebook.add(tab_seq, text=" Pola Angka Urut ")
+        self.var_seq_enabled = tk.BooleanVar(value=True)
+        cb_enable_seq = ttk.Checkbutton(self.seq_frame, text="Aktifkan Penomoran Berurutan", 
+                                        variable=self.var_seq_enabled, command=self._toggle_module_views)
+        cb_enable_seq.pack(anchor="w", pady=(0,5))
         
-        ttk.Label(tab_seq, text="Posisi Nomor Urut:").pack(anchor="w", pady=(2,0))
-        self.cb_seq_position = ttk.Combobox(tab_seq, values=["Awal Nama", "Akhir Nama"], state="readonly")
+        self.seq_inner_frame = ttk.Frame(self.seq_frame)
+        self.seq_inner_frame.pack(fill="x")
+        
+        ttk.Label(self.seq_inner_frame, text="Posisi Nomor Urut:").pack(anchor="w")
+        self.cb_seq_position = ttk.Combobox(self.seq_inner_frame, values=["Awal Nama", "Akhir Nama"], state="readonly")
         self.cb_seq_position.set("Awal Nama")
         self.cb_seq_position.pack(fill="x", pady=2)
         
-        ttk.Label(tab_seq, text="Teks Sebelum Angka (Prefix):").pack(anchor="w", pady=(5,0))
-        self.ent_prefix = ttk.Entry(tab_seq)
+        ttk.Label(self.seq_inner_frame, text="Teks Sebelum Angka (Prefix):").pack(anchor="w", pady=(3,0))
+        self.ent_prefix = ttk.Entry(self.seq_inner_frame)
         self.ent_prefix.insert(0, "DOC_")
         self.ent_prefix.pack(fill="x", pady=2)
         
-        ttk.Label(tab_seq, text="Teks Setelah Angka (Suffix):").pack(anchor="w", pady=(5,0))
-        self.ent_suffix = ttk.Entry(tab_seq)
+        ttk.Label(self.seq_inner_frame, text="Teks Setelah Angka (Suffix):").pack(anchor="w", pady=(3,0))
+        self.ent_suffix = ttk.Entry(self.seq_inner_frame)
         self.ent_suffix.pack(fill="x", pady=2)
         
-        ttk.Label(tab_seq, text="Format Digit Angka (Contoh: 3 -> 001):").pack(anchor="w", pady=(5,0))
-        self.ent_digits = ttk.Entry(tab_seq, width=10)
+        ttk.Label(self.seq_inner_frame, text="Format Digit Angka (Contoh: 3 -> 001):").pack(anchor="w", pady=(3,0))
+        self.ent_digits = ttk.Entry(self.seq_inner_frame, width=10)
         self.ent_digits.insert(0, "3")
         self.ent_digits.pack(anchor="w", pady=2)
+
+        # --- PANEL MODUL 2: OPERASI MODIFIKASI TEKS ---
+        self.text_frame = ttk.LabelFrame(parent, text=" 4. Modul Ubah Teks Nama ", padding=8)
+        self.text_frame.pack(fill="x", pady=5, anchor="n")
         
-        # --- TAB 2: Operasi Modifikasi Teks ---
-        tab_text = ttk.Frame(self.rename_notebook, padding=10)
-        self.rename_notebook.add(tab_text, text=" Ubah Teks Nama ")
+        self.var_text_enabled = tk.BooleanVar(value=False)
+        cb_enable_text = ttk.Checkbutton(self.text_frame, text="Aktifkan Pembersihan/Ubah Teks", 
+                                         variable=self.var_text_enabled, command=self._toggle_module_views)
+        cb_enable_text.pack(anchor="w", pady=(0,5))
         
-        ttk.Label(tab_text, text="Sisipkan di Depan Nama Asli:").pack(anchor="w", pady=(2,0))
-        self.ent_prepend = ttk.Entry(tab_text)
+        self.text_inner_frame = ttk.Frame(self.text_frame)
+        self.text_inner_frame.pack(fill="x")
+        
+        # [BARU] Opsi reset nama asli file
+        self.var_reset_names = tk.BooleanVar(value=False)
+        self.cb_reset_names = ttk.Checkbutton(self.text_inner_frame, text="Reset / Ganti Total Nama Asli", 
+                                              variable=self.var_reset_names, command=self._toggle_module_views)
+        self.cb_reset_names.pack(anchor="w", pady=(0, 5))
+        
+        self.lbl_prepend = ttk.Label(self.text_inner_frame, text="Sisipkan di Depan Nama Asli:")
+        self.lbl_prepend.pack(anchor="w")
+        self.ent_prepend = ttk.Entry(self.text_inner_frame)
         self.ent_prepend.pack(fill="x", pady=2)
         
-        ttk.Label(tab_text, text="Sisipkan di Belakang Nama Asli:").pack(anchor="w", pady=(5,0))
-        self.ent_append = ttk.Entry(tab_text)
+        self.lbl_append = ttk.Label(self.text_inner_frame, text="Sisipkan di Belakang Nama Asli:")
+        self.lbl_append.pack(anchor="w", pady=(3,0))
+        self.ent_append = ttk.Entry(self.text_inner_frame)
         self.ent_append.pack(fill="x", pady=2)
         
-        ttk.Separator(tab_text, orient="horizontal").pack(fill="x", pady=10)
-        
-        ttk.Label(tab_text, text="Cari Kata yang Ingin Diganti:").pack(anchor="w")
-        self.ent_replace_target = ttk.Entry(tab_text)
+        self.lbl_replace_t = ttk.Label(self.text_inner_frame, text="Cari Kata Konten:")
+        self.lbl_replace_t.pack(anchor="w", pady=(5,0))
+        self.ent_replace_target = ttk.Entry(self.text_inner_frame)
         self.ent_replace_target.pack(fill="x", pady=2)
         
-        ttk.Label(tab_text, text="Diganti Menjadi:").pack(anchor="w", pady=(5,0))
-        self.ent_replace_with = ttk.Entry(tab_text)
+        self.lbl_replace_w = ttk.Label(self.text_inner_frame, text="Ganti Menjadi:")
+        self.lbl_replace_w.pack(anchor="w", pady=(3,0))
+        self.ent_replace_with = ttk.Entry(self.text_inner_frame)
         self.ent_replace_with.pack(fill="x", pady=2)
+        
+        self._toggle_module_views()
+
+    def _toggle_module_views(self):
+        """Menghidupkan/mematikan input field berdasarkan status checkbox."""
+        # Kontrol modul angka urut
+        if self.var_seq_enabled.get():
+            for child in self.seq_inner_frame.winfo_children():
+                child.configure(state="normal")
+        else:
+            for child in self.seq_inner_frame.winfo_children():
+                child.configure(state="disabled")
+                
+        # Kontrol modul teks
+        if self.var_text_enabled.get():
+            self.cb_reset_names.configure(state="normal")
+            
+            # Jika opsi reset nama dicentang, nonaktifkan operasi teks penambah karena nama aslinya sudah dibuang
+            if self.var_reset_names.get():
+                self.ent_prepend.configure(state="disabled")
+                self.ent_append.configure(state="disabled")
+                self.ent_replace_target.configure(state="disabled")
+                self.ent_replace_with.configure(state="disabled")
+            else:
+                self.ent_prepend.configure(state="normal")
+                self.ent_append.configure(state="normal")
+                self.ent_replace_target.configure(state="normal")
+                self.ent_replace_with.configure(state="normal")
+        else:
+            self.cb_reset_names.configure(state="disabled")
+            self.ent_prepend.configure(state="disabled")
+            self.ent_append.configure(state="disabled")
+            self.ent_replace_target.configure(state="disabled")
+            self.ent_replace_with.configure(state="disabled")
 
     def _build_table_panel(self, parent):
         columns = ("old_name", "new_name", "size", "type")
@@ -176,9 +241,8 @@ class MainWindow(tk.Tk):
         self.table.heading("size", text="Ukuran")
         self.table.heading("type", text="Ekstensi")
         
-        # Pengaturan lebar kolom presisi agar tidak terpotong saat jendela dibuka pertama kali
-        self.table.column("old_name", width=310, anchor="w")
-        self.table.column("new_name", width=310, anchor="w")
+        self.table.column("old_name", width=320, anchor="w")
+        self.table.column("new_name", width=320, anchor="w")
         self.table.column("size", width=85, anchor="e")
         self.table.column("type", width=75, anchor="center")
         
@@ -188,9 +252,7 @@ class MainWindow(tk.Tk):
         self.table.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
-    # ==========================================
-    # KOORDINATOR LOGIKA & EVENT HANDLING
-    # ==========================================
+    # --- KONTROLLER ---
 
     def _browse_folder(self):
         folder = filedialog.askdirectory()
@@ -203,7 +265,6 @@ class MainWindow(tk.Tk):
     def _refresh_file_list(self):
         if not self.selected_folder:
             return
-        # Membaca data file mentah di folder terpilih
         self.current_files = [p for p in self.selected_folder.iterdir() if p.is_file()]
         
         for row in self.table.get_children():
@@ -221,47 +282,37 @@ class MainWindow(tk.Tk):
         if not self.current_files:
             return
             
-        # 1. Validasi Pemilihan Kriteria Duplikat (Maksimal 2 Kriteria)
-        p1_text = self.cb_p1.get()
-        p2_text = self.cb_p2.get()
-        
-        p1_key = self.criteria_map[p1_text]
-        p2_key = self.criteria_map[p2_text]
+        if not self.var_seq_enabled.get() and not self.var_text_enabled.get():
+            messagebox.showwarning("Peringatan", "Pilih minimal salah satu modul konfigurasi nama.")
+            return
+            
+        p1_key = self.criteria_map[self.cb_p1.get()]
+        p2_key = self.criteria_map[self.cb_p2.get()]
         
         if p2_key and p1_key == p2_key:
             messagebox.showwarning("Aturan Salah", "Prioritas 1 dan Prioritas 2 tidak boleh memilih kriteria yang sama.")
             return
 
-        # Daftarkan aturan prioritas pengurutan
         priorities = [(p1_key, self.var_desc_p1.get())]
         if p2_key:
             priorities.append((p2_key, self.var_desc_p2.get()))
             
-        # 2. Jalankan Proses Sorting Engine
         sorted_paths = sort_files(self.current_files, priorities)
         
-        # 3. Kumpulkan Data Pengaturan dari Tab Aktif
-        active_tab_index = self.rename_notebook.index(self.rename_notebook.select())
-        config = {}
+        config = {
+            "seq_enabled": self.var_seq_enabled.get(),
+            "text_enabled": self.var_text_enabled.get(),
+            "reset_names": self.var_reset_names.get(), # [BARU] Meneruskan parameter reset
+            "seq_position": self.cb_seq_position.get(),
+            "prefix": self.ent_prefix.get(),
+            "suffix": self.ent_suffix.get(),
+            "digits": self.ent_digits.get(),
+            "prepend_text": self.ent_prepend.get(),
+            "append_text": self.ent_append.get(),
+            "replace_target": self.ent_replace_target.get(),
+            "replace_replacement": self.ent_replace_with.get()
+        }
         
-        if active_tab_index == 0:  # Tab Pola Angka Urut
-            config.update({
-                "mode": "sequential",
-                "seq_position": self.cb_seq_position.get(),
-                "prefix": self.ent_prefix.get(),
-                "suffix": self.ent_suffix.get(),
-                "digits": self.ent_digits.get()
-            })
-        else:                      # Tab Ubah Teks Nama
-            config.update({
-                "mode": "text_operation",
-                "prepend_text": self.ent_prepend.get(),
-                "append_text": self.ent_append.get(),
-                "replace_target": self.ent_replace_target.get(),
-                "replace_replacement": self.ent_replace_with.get()
-            })
-            
-        # 4. Ambil Preview Nama & Deteksi Masalah Konflik Duplikasi
         self.preview_data = generate_preview(sorted_paths, config)
         conflicts = detect_conflicts(self.preview_data)
         
@@ -273,7 +324,6 @@ class MainWindow(tk.Tk):
             self.btn_rename.config(state="disabled")
             return
             
-        # 5. Render Hasil Perubahan Sementara ke View Tabel
         for row in self.table.get_children():
             self.table.delete(row)
             
@@ -281,7 +331,7 @@ class MainWindow(tk.Tk):
             size_kb = f"{max(1, old_path.stat().st_size // 1024)} KB"
             self.table.insert("", "end", values=(old_path.name, new_name, size_kb, old_path.suffix.upper()))
             
-        self.lbl_status.config(text="Status: Preview berhasil dibuat. Silakan periksa tabel sebelum eksekusi.")
+        self.lbl_status.config(text="Status: Preview berhasil dibuat.")
         self.btn_rename.config(state="normal")
 
     def _execute_rename(self):
