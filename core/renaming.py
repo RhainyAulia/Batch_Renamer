@@ -1,65 +1,87 @@
 # core/renaming.py
+import re
 from pathlib import Path
 
 def generate_preview(file_paths: list[Path], config: dict) -> list[tuple[Path, str]]:
-    """
-    Menghasilkan tuple (Path_Lama, Nama_Baru) dengan fitur reset nama asli.
-    """
+
     preview_results = []
     
     for index, path in enumerate(file_paths, start=1):
         ext = path.suffix
-        new_name = path.stem
+        base_word = path.stem
         
-        # --- LANGKAH 1: Jalankan Operasi Teks / Reset Nama ---
-        if config.get("text_enabled"):
-            # Jika user memilih untuk mereset/menghapus nama asli file
-            if config.get("reset_names"):
-                new_name = ""
-            else:
-                if config.get("prepend_text"):
-                    new_name = f"{config['prepend_text']}{new_name}"
-                if config.get("append_text"):
-                    new_name = f"{new_name}{config['append_text']}"
-                if config.get("replace_target"):
-                    new_name = new_name.replace(config["replace_target"], config["replace_replacement"])
+        #Operasi Teks / Reset Nama ---
+        if config.get("reset_names"):
+            base_word = ""
+        else:
+            if config.get("prepend_text"):
+                base_word = f"{config['prepend_text']}{base_word}"
+            if config.get("append_text"):
+                base_word = f"{base_word}{config['append_text']}"
+                
+            #regex \b (Word Boundary) 
+            target = config.get("replace_target")
+            replacement = config.get("replace_replacement", "")
+            
+            if target:
+                # re.escape karakter unik 
+                pattern = r'\b' + re.escape(target) + r'\b'
+                base_word = re.sub(pattern, replacement, base_word)
         
-        # --- LANGKAH 2: Jalankan Pola Angka Urut ---
+        # Pola Angka Urut
         if config.get("seq_enabled"):
             prefix = config.get("prefix", "")
             suffix = config.get("suffix", "")
-            digits = int(config.get("digits", 3))
+            
+            try:
+                digits = int(config.get("digits", 3))
+            except ValueError:
+                digits = 3
+                
             position = config.get("seq_position", "Awal Nama")
             
+            # Generate nomor urut berdasarkan format digit
             seq_num = str(index).zfill(digits)
             
-            # Penggabungan nama berdasarkan posisi nomor urut
-            if position == "Awal Nama":
-                new_name = f"{prefix}{seq_num}{suffix}{new_name}"
-            else:
-                new_name = f"{new_name}{prefix}{suffix}{seq_num}"
-                
-        # Jika setelah diproses nama file benar-benar kosong (karena nama direset dan modul angka mati)
-        if not new_name:
-            new_name = f"file_{index}"
+            # Gabungkan nomor dengan prefix dan suffix-nya sendiri terlebih dahulu
+            num_block = f"{prefix}{seq_num}{suffix}"
             
-        final_name = f"{new_name}{ext}"
+            # num_block thd Kata Utama
+            if position == "Awal Nama":
+                final_stem = f"{num_block}{base_word}"
+            else:
+                final_stem = f"{base_word}{num_block}"
+        else:
+            final_stem = base_word
+                
+        # Proteksi jika hasil nama benar-benar kosong agar file tidak tidak memiliki nama
+        if not final_stem:
+            final_stem = f"file_{index}"
+            
+        final_name = f"{final_stem}{ext}"
         preview_results.append((path, final_name))
         
     return preview_results
 
+
 def detect_conflicts(preview_results: list[tuple[Path, str]]) -> list[str]:
+    """
+    Mendeteksi potensi bahaya data terhapus (Overwrite) atau dua file menjadi nama yang sama (Duplikasi)
+    sebelum eksekusi perubahan nama dilakukan secara permanen di hardisk.
+    """
     conflicts = []
     seen_names = set()
     
     for old_path, new_name in preview_results:
         target_path = old_path.parent / new_name
         
+        # Antrean internal menghasilkan nama yang kembar identik
         if target_path in seen_names:
-            conflicts.append(f"Konflik Duplikasi: Lebih dari satu file akan diubah menjadi '{new_name}'")
+            conflicts.append(f"Konflik Duplikasi: Lebih dari satu file diproyeksikan berubah menjadi '{new_name}'")
         seen_names.add(target_path)
         
+        # Nama baru menabrak file yang sudah ada di folder tersebut
         if target_path.exists() and target_path != old_path:
-            conflicts.append(f"Konflik Overwrite: File '{new_name}' sudah ada di folder tujuan.")
+            conflicts.append(f"Konflik Overwrite: File dengan nama '{new_name}' sudah eksis di folder tujuan.")
             
     return list(set(conflicts))
