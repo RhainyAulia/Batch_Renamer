@@ -8,13 +8,13 @@ class HistoryManager:
         self.history_path.parent.mkdir(parents=True, exist_ok=True)
 
     def save_history(self, rename_pairs: list[tuple[str, str]]):
-        """Menyimpan riwayat rename ke file JSON."""
+        """Saving rename history to a JSON file."""
         data = [{"old_path": str(old), "new_path": str(new)} for old, new in rename_pairs]
         with open(self.history_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4)
 
     def load_last_history(self) -> list[dict]:
-        """Memuat riwayat terakhir jika file ada dan valid."""
+        """Loading the last history if the file exists and is valid."""
         if not self.history_path.exists():
             return []
         try:
@@ -24,6 +24,6 @@ class HistoryManager:
             return []
 
     def clear_history(self):
-        """Menghapus file riwayat setelah sukses rollback."""
+        """Clearing the history file after a successful rollback."""
         if self.history_path.exists():
             self.history_path.unlink()

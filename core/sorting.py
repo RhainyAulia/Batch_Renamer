@@ -13,17 +13,11 @@ def get_file_metadata(file_path: Path) -> dict:
     }
 
 def sort_files(file_paths: list[Path], priorities: list[tuple[str, bool]]) -> list[Path]:
-    """
-    Mengurutkan file secara stabil berdasarkan urutan prioritas yang diberikan.
-    priorities berisi list of tuple: [ (kriteria_1, reverse_1), (kriteria_2, reverse_2) ]
-    Diurutkan dari prioritas paling rendah ke paling tinggi (Stable Sort Property).
-    """
     if not priorities:
         return file_paths
 
     meta_list = [get_file_metadata(p) for p in file_paths]
 
-    # Jalankan Timsort bawaan Python secara terbalik untuk menjaga kestabilan urutan berjenjang
     for criteria, reverse in reversed(priorities):
         meta_list.sort(key=lambda x: x[criteria], reverse=reverse)
 

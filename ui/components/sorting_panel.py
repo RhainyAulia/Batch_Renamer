@@ -1,44 +1,61 @@
-# ui/components/sorting_panel.py
-import tkinter as tk
-from tkinter import ttk
+import customtkinter as ctk
 
-class SortingPanel(ttk.LabelFrame):
+class SortingPanel(ctk.CTkFrame):
     def __init__(self, parent):
-        super().__init__(parent, text=" 2. Urutan Prioritas File ", padding=8)
+        super().__init__(parent)
         
-        self.criteria_options = ["(Tidak ada)", "Nama File", "Ekstensi File", "Ukuran File", "Tanggal Modifikasi", "Tanggal Dibuat"]
+        self.criteria_options = ["(None)", "File Name", "File Extension", "File Size", "Date Modified", "Date Created"]
         self.criteria_map = {
-            "(Tidak ada)": None, "Nama File": "name", "Ekstensi File": "extension",
-            "Ukuran File": "size", "Tanggal Modifikasi": "modification_date", "Tanggal Dibuat": "creation_date"
+            "(None)": None, "File Name": "name", "File Extension": "extension",
+            "File Size": "size", "Date Modified": "modification_date", "Date Created": "creation_date"
         }
         self._create_widgets()
         
     def _create_widgets(self):
-        ttk.Label(self, text="Prioritas 1 (Utama):").pack(anchor="w", pady=(2,0))
-        self.cb_p1 = ttk.Combobox(self, values=self.criteria_options[1:], state="readonly")
-        self.cb_p1.set("Nama File")
-        self.cb_p1.pack(fill="x", pady=2)
-        self.cb_p1.bind("<<ComboboxSelected>>", lambda e: self._update_p2_options())
+        lbl_title = ctk.CTkLabel(self, text="2. File Sorting Priority", font=("Segoe UI", 12, "bold"))
+        lbl_title.pack(anchor="w", padx=10, pady=(10, 5))
         
-        self.var_desc_p1 = tk.BooleanVar(value=False)
-        ttk.Checkbutton(self, text="Urutan Terbalik (Z-A / Terbaru)", variable=self.var_desc_p1).pack(anchor="w", pady=(0,5))
+        # --- PRIORITAS 1 ---
+        ctk.CTkLabel(self, text="Priority 1 (Primary):", font=("Segoe UI", 11)).pack(anchor="w", padx=10)
         
-        ttk.Label(self, text="Prioritas 2 (Jika Prioritas 1 Sama):").pack(anchor="w")
-        self.cb_p2 = ttk.Combobox(self, state="readonly")
-        self.cb_p2.pack(fill="x", pady=2)
+        self.cb_p1 = ctk.CTkComboBox(self, values=self.criteria_options[1:], state="readonly", command=self._update_p2_options)
+        self.cb_p1.set("File Name")
+        self.cb_p1.pack(fill="x", padx=10, pady=2)
+    
+        try:
+            self.cb_p1._dropdown_menu.configure(min_width=260)
+            self.cb_p1._canvas.bind("<Button-1>", lambda e: self.cb_p1._on_button_press())
+        except Exception:
+            pass
         
-        self.var_desc_p2 = tk.BooleanVar(value=False)
-        ttk.Checkbutton(self, text="Urutan Terbalik (Z-A / Terbaru)", variable=self.var_desc_p2).pack(anchor="w")
+        self.var_desc_p1 = ctk.BooleanVar(value=False)
+        self.chk_p1 = ctk.CTkCheckBox(self, text="Reverse Order (Z-A / Newest)", variable=self.var_desc_p1, font=("Segoe UI", 11))
+        self.chk_p1.pack(anchor="w", padx=10, pady=(0, 10))
         
-        self._update_p2_options()
+        # --- PRIORITAS 2 ---
+        ctk.CTkLabel(self, text="Priority 2 (Tie-Breaker):", font=("Segoe UI", 11)).pack(anchor="w", padx=10)
+        
+        self.cb_p2 = ctk.CTkComboBox(self, state="readonly")
+        self.cb_p2.pack(fill="x", padx=10, pady=2)
+        
+        try:
+            self.cb_p2._dropdown_menu.configure(min_width=260)
+            self.cb_p2._canvas.bind("<Button-1>", lambda e: self.cb_p2._on_button_press())
+        except Exception:
+            pass
+        
+        self.var_desc_p2 = ctk.BooleanVar(value=False)
+        self.chk_p2 = ctk.CTkCheckBox(self, text="Reverse Order (Z-A / Newest)", variable=self.var_desc_p2, font=("Segoe UI", 11))
+        self.chk_p2.pack(anchor="w", padx=10, pady=(0, 10))
+        
+        self._update_p2_options(None)
 
-    def _update_p2_options(self):
+    def _update_p2_options(self, choice):
         selected_p1 = self.cb_p1.get()
-        # Filter kriteria agar yang sudah dipilih di P1 tidak muncul di P2
         filtered_options = [opt for opt in self.criteria_options if opt != selected_p1]
-        self.cb_p2.config(values=filtered_options)
+        self.cb_p2.configure(values=filtered_options)
         if self.cb_p2.get() == selected_p1 or not self.cb_p2.get():
-            self.cb_p2.set("(Tidak ada)")
+            self.cb_p2.set("(None)")
 
     def get_sorting_priorities(self):
         p1_key = self.criteria_map[self.cb_p1.get()]

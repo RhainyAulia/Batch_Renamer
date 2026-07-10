@@ -10,7 +10,7 @@ def generate_preview(file_paths: list[Path], config: dict) -> list[tuple[Path, s
         ext = path.suffix
         base_word = path.stem
         
-        #Operasi Teks / Reset Nama ---
+        #Reset Nama ---
         if config.get("reset_names"):
             base_word = ""
         else:
@@ -65,10 +65,7 @@ def generate_preview(file_paths: list[Path], config: dict) -> list[tuple[Path, s
 
 
 def detect_conflicts(preview_results: list[tuple[Path, str]]) -> list[str]:
-    """
-    Mendeteksi potensi bahaya data terhapus (Overwrite) atau dua file menjadi nama yang sama (Duplikasi)
-    sebelum eksekusi perubahan nama dilakukan secara permanen di hardisk.
-    """
+
     conflicts = []
     seen_names = set()
     
@@ -77,11 +74,11 @@ def detect_conflicts(preview_results: list[tuple[Path, str]]) -> list[str]:
         
         # Antrean internal menghasilkan nama yang kembar identik
         if target_path in seen_names:
-            conflicts.append(f"Konflik Duplikasi: Lebih dari satu file diproyeksikan berubah menjadi '{new_name}'")
+            conflicts.append(f"Duplication Conflict: More than one file is projected to be named '{new_name}'")
         seen_names.add(target_path)
         
         # Nama baru menabrak file yang sudah ada di folder tersebut
         if target_path.exists() and target_path != old_path:
-            conflicts.append(f"Konflik Overwrite: File dengan nama '{new_name}' sudah eksis di folder tujuan.")
+            conflicts.append(f"Overwrite Conflict: File with name '{new_name}' already exists in the target folder.")
             
     return list(set(conflicts))
