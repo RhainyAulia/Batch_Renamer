@@ -1,3 +1,5 @@
+import os
+import sys
 import customtkinter as ctk
 from tkinter import messagebox
 from pathlib import Path
@@ -16,6 +18,16 @@ ctk.set_appearance_mode("System")
 ctk.set_default_color_theme("blue")
 
 class MainWindow(ctk.CTk):
+
+    def get_asset_path(relative_path):
+        if hasattr(sys, '_MEIPASS'):
+            return os.path.join(sys._MEIPASS, relative_path)
+        return os.path.join(os.path.abspath("."), relative_path)
+    
+        icon_path = get_asset_path("app_icon.ico")
+        if os.path.exists(icon_path):
+            self.iconbitmap(icon_path)
+
     def __init__(self):
         super().__init__()
         
