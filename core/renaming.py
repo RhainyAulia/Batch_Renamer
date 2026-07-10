@@ -3,14 +3,13 @@ import re
 from pathlib import Path
 
 def generate_preview(file_paths: list[Path], config: dict) -> list[tuple[Path, str]]:
-
     preview_results = []
     
     for index, path in enumerate(file_paths, start=1):
         ext = path.suffix
         base_word = path.stem
         
-        #Reset Nama ---
+        # --- STEP 1: TEXT MANIPULATION OR RESET ---
         if config.get("reset_names"):
             base_word = ""
         else:
@@ -19,16 +18,22 @@ def generate_preview(file_paths: list[Path], config: dict) -> list[tuple[Path, s
             if config.get("append_text"):
                 base_word = f"{base_word}{config['append_text']}"
                 
-            #regex \b (Word Boundary) 
             target = config.get("replace_target")
-            replacement = config.get("replace_replacement", "")
+            
+            if config.get("action_mode") == "Delete Text Only":
+                replacement = ""
+            else:
+                replacement = config.get("replace_replacement", "")
             
             if target:
-                # re.escape karakter unik 
-                pattern = r'\b' + re.escape(target) + r'\b'
+                if re.search(r'[a-zA-Z0-9]', target):
+                    pattern = r'(?<![a-zA-Z])' + re.escape(target) + r'(?![a-zA-Z])'
+                else:
+                    pattern = re.escape(target)
+                    
                 base_word = re.sub(pattern, replacement, base_word)
         
-        # Pola Angka Urut
+        # --- STEP 2: SEQUENTIAL NUMBER PATTERN ---
         if config.get("seq_enabled"):
             prefix = config.get("prefix", "")
             suffix = config.get("suffix", "")
@@ -39,14 +44,9 @@ def generate_preview(file_paths: list[Path], config: dict) -> list[tuple[Path, s
                 digits = 3
                 
             position = config.get("seq_position", "Awal Nama")
-            
-            # Generate nomor urut berdasarkan format digit
             seq_num = str(index).zfill(digits)
-            
-            # Gabungkan nomor dengan prefix dan suffix-nya sendiri terlebih dahulu
             num_block = f"{prefix}{seq_num}{suffix}"
             
-            # num_block thd Kata Utama
             if position == "Awal Nama":
                 final_stem = f"{num_block}{base_word}"
             else:
@@ -54,7 +54,6 @@ def generate_preview(file_paths: list[Path], config: dict) -> list[tuple[Path, s
         else:
             final_stem = base_word
                 
-        # Proteksi jika hasil nama benar-benar kosong agar file tidak tidak memiliki nama
         if not final_stem:
             final_stem = f"file_{index}"
             
@@ -65,20 +64,44 @@ def generate_preview(file_paths: list[Path], config: dict) -> list[tuple[Path, s
 
 
 def detect_conflicts(preview_results: list[tuple[Path, str]]) -> list[str]:
-
+    """
+    Detects potential data loss conflicts and provides smart, actionable 
+    solutions directly to the user interface.
+    """
     conflicts = []
     seen_names = set()
+    has_duplication = False
+    has_overwrite = False
     
+    # Analyze the files to detect which specific conflict types occur
     for old_path, new_name in preview_results:
         target_path = old_path.parent / new_name
         
-        # Antrean internal menghasilkan nama yang kembar identik
         if target_path in seen_names:
-            conflicts.append(f"Duplication Conflict: More than one file is projected to be named '{new_name}'")
+            has_duplication = True
         seen_names.add(target_path)
         
-        # Nama baru menabrak file yang sudah ada di folder tersebut
         if target_path.exists() and target_path != old_path:
-            conflicts.append(f"Overwrite Conflict: File with name '{new_name}' already exists in the target folder.")
+            has_overwrite = True
             
-    return list(set(conflicts))
+    if has_duplication:
+        msg_dup = (
+            "[Duplication Conflict]\n"
+            "Multiple files in the queue are generating the exact same new name.\n\n"
+            "💡 How to Fix:\n"
+            "1. Enable the 'Sequential Number Module' (Module 3) to ensure every file gets a unique index (001, 002, etc.).\n"
+            "2. If numbering is disabled, make sure your Prepend/Append texts in Module 4 do not create uniform names."
+        )
+        conflicts.append(msg_dup)
+        
+    if has_overwrite:
+        msg_ovr = (
+            "[Overwrite Conflict]\n"
+            "The projected file name already exists and belongs to another file in this folder.\n\n"
+            "💡 How to Fix:\n"
+            "1. Change the 'Prefix' or 'Suffix' text in Module 3 (e.g., change 'DOC_' to 'NEW_').\n"
+            "2. Increase the 'Number Digits Format' or change the number position (Start/End) to avoid overlapping with existing files."
+        )
+        conflicts.append(msg_ovr)
+            
+    return conflicts
